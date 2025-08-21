@@ -31,7 +31,7 @@ class MonitorHttpSensor(CoordinatorEntity, SensorEntity):
 		self._attr_name = name
 		# Use both name and URL for uniqueness
 		url_part = coordinator.url.replace('://', '_').replace('/', '_')
-	self._attr_unique_id = f"mymonitor_{name}_{url_part}"
+		self._attr_unique_id = f"mymonitor_{name}_{url_part}"
 
 	@property
 	def state(self):
