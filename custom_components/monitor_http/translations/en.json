@@ -1,0 +1,11 @@
+{
+  "title": "MyMonitor",
+  "config": {
+    "step": {
+      "user": {
+  "title": "Add Service Endpoint",
+  "description": "Configure a service endpoint to monitor."
+      }
+    }
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "name": "MyMonitor",
+  "content_in_root": false,
+  "homeassistant": "2024.0.0"
+}
