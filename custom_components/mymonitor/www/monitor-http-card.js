@@ -13,181 +13,209 @@ class MonitorHttpCard extends HTMLElement {
         this.innerHTML = '';
         this._historyCache = {};
         this._lastUpdate = {};
+        console.log('MonitorHttpCard: Config set', config);
     }
 
     async fetchEntityHistory(entityId, hours) {
+        console.log(`=== FETCHING HISTORY FOR ${entityId} ===`);
+        
         try {
-            // Check cache expiry (refresh every 2 minutes for better debugging)
             const now = Date.now();
-            if (this._lastUpdate[entityId] && (now - this._lastUpdate[entityId]) < 2 * 60 * 1000) {
-                console.log(`Using cached data for ${entityId}`);
-                return this._historyCache[entityId] || [];
-            }
-
-            console.log(`Fetching history for ${entityId} over ${hours} hours`);
-
-            // Fetch history from Home Assistant API
             const start = new Date(now - hours * 60 * 60 * 1000);
             const startIso = start.toISOString();
             
-            // More robust URL construction
-            const baseUrl = window.location.origin;
-            const url = `${baseUrl}/api/history/period/${startIso}?filter_entity_id=${entityId}&minimal_response&no_attributes`;
+            console.log(`Time range: ${start.toLocaleString()} to ${new Date(now).toLocaleString()}`);
             
-            console.log(`Fetching from URL: ${url}`);
+            // Try multiple URL formats to see which works
+            const urls = [
+                `/api/history/period/${startIso}?filter_entity_id=${entityId}&minimal_response&no_attributes`,
+                `/api/history/period/${startIso}?filter_entity_id=${entityId}&minimal_response`,
+                `/api/history/period/${startIso}?filter_entity_id=${entityId}`,
+            ];
             
-            const resp = await fetch(url, { 
-                credentials: 'same-origin',
-                headers: {
-                    'Authorization': `Bearer ${this._getAuthToken()}`,
-                    'Content-Type': 'application/json'
+            for (let i = 0; i < urls.length; i++) {
+                const url = urls[i];
+                console.log(`Trying URL ${i + 1}: ${url}`);
+                
+                try {
+                    const resp = await fetch(url, { 
+                        credentials: 'same-origin',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    console.log(`Response ${i + 1}: ${resp.status} ${resp.statusText}`);
+                    
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        console.log(`Data ${i + 1}:`, data);
+                        
+                        if (Array.isArray(data) && data.length > 0 && data[0] && data[0].length > 0) {
+                            const history = data[0].map(entry => {
+                                const isUp = this._determineUpState(entry.state);
+                                console.log(`Entry: ${entry.last_changed} -> ${entry.state} -> ${isUp ? 'UP' : 'DOWN'}`);
+                                return [entry.last_changed, isUp];
+                            });
+                            
+                            console.log(`Successfully processed ${history.length} history entries`);
+                            return history;
+                        } else {
+                            console.log(`URL ${i + 1} returned empty or invalid data`);
+                        }
+                    } else {
+                        const errorText = await resp.text();
+                        console.error(`URL ${i + 1} failed:`, errorText);
+                    }
+                } catch (e) {
+                    console.error(`URL ${i + 1} error:`, e);
                 }
-            });
-
-            if (!resp.ok) {
-                console.error(`Failed to fetch history for ${entityId}: ${resp.status} ${resp.statusText}`);
-                const errorText = await resp.text();
-                console.error('Response body:', errorText);
-                return [];
             }
-
-            const data = await resp.json();
-            console.log(`Raw history data for ${entityId}:`, data);
-
-            if (!Array.isArray(data) || data.length === 0) {
-                console.warn(`No history data returned for ${entityId}`);
-                return [];
-            }
-
-            const entityData = data[0];
-            if (!entityData || entityData.length === 0) {
-                console.warn(`Empty history array for ${entityId}`);
-                return [];
-            }
-
-            // Map to [timestamp, up] where up = true for 'on' or 'online', false for 'off' or 'offline'
-            const history = entityData.map(entry => {
-                const isUp = entry.state === 'on' || entry.state === 'online' || 
-                           entry.state === 'true' || entry.state === '1' || 
-                           entry.state === 'available' || entry.state === 'connected';
-                return [entry.last_changed, isUp];
-            });
-
-            console.log(`Processed ${history.length} history entries for ${entityId}`);
-
-            // Cache the result
-            this._historyCache[entityId] = history;
-            this._lastUpdate[entityId] = now;
-
-            return history;
+            
+            console.log('All history fetch attempts failed');
+            return [];
+            
         } catch (error) {
-            console.error(`Error fetching history for ${entityId}:`, error);
+            console.error(`Major error fetching history for ${entityId}:`, error);
             return [];
         }
     }
 
-    async checkRecorderStatus(hass) {
-        try {
-            const resp = await fetch('/api/config', { credentials: 'same-origin' });
-            if (resp.ok) {
-                const config = await resp.json();
-                return {
-                    enabled: config.components.includes('recorder'),
-                    dbSize: 'Available'
-                };
-            }
-        } catch (e) {
-            console.warn('Could not check recorder status:', e);
+    _determineUpState(state) {
+        if (typeof state === 'string') {
+            const lowerState = state.toLowerCase();
+            const isUp = lowerState === 'on' || 
+                        lowerState === 'online' || 
+                        lowerState === 'true' || 
+                        lowerState === 'connected' || 
+                        lowerState === 'available' ||
+                        lowerState === 'home' ||
+                        lowerState === 'open' ||
+                        lowerState === '1';
+            return isUp;
         }
-        return { enabled: false, dbSize: 'Unknown' };
-    }
-
-    _getAuthToken() {
-        // Try to get auth token from Home Assistant frontend
-        if (window.hassConnection && window.hassConnection.auth && window.hassConnection.auth.accessToken) {
-            return window.hassConnection.auth.accessToken;
-        }
-        // Fallback - this might not be needed if using credentials: 'same-origin'
-        return '';
+        return Boolean(state);
     }
 
     generateHistoryBars(history, maxBars = 100) {
+        console.log(`Generating bars for ${history.length} history entries`);
+        
         if (!history || history.length === 0) {
-            return '<span style="color:#888;font-size:12px;">No data</span>';
+            return '<span style="color:#888;font-size:12px;">No history data found</span>';
         }
 
-        // If we have too many data points, sample them
+        // Sample data if too many points
         let sampledHistory = history;
         if (history.length > maxBars) {
-            const step = Math.floor(history.length / maxBars);
+            const step = Math.ceil(history.length / maxBars);
             sampledHistory = history.filter((_, index) => index % step === 0);
+            console.log(`Sampled history from ${history.length} to ${sampledHistory.length} points`);
         }
 
-        return sampledHistory.map(([timestamp, up]) => {
+        const bars = sampledHistory.map(([timestamp, up]) => {
             const color = up ? '#4caf50' : '#e53935';
             const title = `${new Date(timestamp).toLocaleString()}: ${up ? 'Online' : 'Offline'}`;
             return `<div style="display:inline-block;width:4px;height:18px;margin-right:1px;background:${color};border-radius:2px;" title="${title}"></div>`;
         }).join('');
+        
+        return bars;
+    }
+
+    async testCurrentEntityState(hass, entityId) {
+        console.log(`=== TESTING CURRENT STATE FOR ${entityId} ===`);
+        
+        // Test 1: Check if entity exists in hass.states
+        const entity = hass.states[entityId];
+        if (!entity) {
+            console.error(`Entity ${entityId} not found in hass.states`);
+            console.log('Available entities starting with same prefix:', 
+                Object.keys(hass.states).filter(e => e.startsWith(entityId.split('.')[0])));
+            return false;
+        }
+        
+        console.log(`Current entity state:`, entity);
+        console.log(`State: ${entity.state}, Last changed: ${entity.last_changed}`);
+        
+        // Test 2: Check if we can fetch current state via API
+        try {
+            const resp = await fetch(`/api/states/${entityId}`, { 
+                credentials: 'same-origin' 
+            });
+            if (resp.ok) {
+                const apiEntity = await resp.json();
+                console.log(`API entity state:`, apiEntity);
+            } else {
+                console.error(`API states fetch failed: ${resp.status}`);
+            }
+        } catch (e) {
+            console.error('API states test failed:', e);
+        }
+        
+        return true;
     }
 
     async renderCard(hass) {
-        if (!this.config) return;
+        console.log('=== RENDERING CARD ===');
+        
+        if (!this.config) {
+            console.error('No config available');
+            return;
+        }
 
         const cfg = this.config;
         const historyLength = cfg.history_length || 24;
         const cardName = cfg.name || 'Monitor HTTP';
         const showDebug = cfg.show_debug || false;
 
-        // Add debug information if requested
-        let debugInfo = '';
-        if (showDebug) {
-            const recorderInfo = await this.checkRecorderStatus(hass);
-            debugInfo = `
-                <div style="background:#f5f5f5;padding:8px;margin-bottom:12px;font-size:11px;border-radius:4px;">
-                    <strong>Debug Info:</strong><br>
-                    Recorder: ${recorderInfo.enabled ? 'Enabled' : 'Disabled'}<br>
-                    DB Size: ${recorderInfo.dbSize || 'Unknown'}<br>
-                    Last Update: ${new Date().toLocaleString()}
-                </div>
-            `;
-        }
+        console.log(`Config: ${JSON.stringify(cfg)}`);
 
         // Multi-entity mode
         if (Array.isArray(cfg.entities) && cfg.entities.length > 0) {
+            console.log(`Multi-entity mode with ${cfg.entities.length} entities`);
+            
             let rows = '';
             
-            for (const row of cfg.entities) {
+            for (const [index, row] of cfg.entities.entries()) {
+                console.log(`\n--- Processing entity ${index + 1}: ${row.entity} ---`);
+                
                 const entityId = row.entity;
                 const customName = row.name;
-                const entity = hass.states[entityId];
-                let bars = '';
-                let status = '';
-                let debugText = '';
-                let label = customName || (entity ? (entity.attributes.friendly_name || entity.entity_id) : entityId);
-
-                if (!entity) {
-                    bars = `<span style="color:#f00;font-size:12px;">Entity not found: ${entityId}</span>`;
-                    status = '❌';
-                } else {
-                    const history = await this.fetchEntityHistory(entityId, historyLength);
-                    bars = this.generateHistoryBars(history);
-                    
-                    // Current status indicator
-                    const currentState = entity.state === 'on' || entity.state === 'online' || 
-                                       entity.state === 'true' || entity.state === '1' ||
-                                       entity.state === 'available' || entity.state === 'connected';
-                    status = currentState ? '🟢' : '🔴';
-
-                    if (showDebug) {
-                        debugText = `<div style="font-size:10px;color:#666;margin-left:24px;">
-                            State: ${entity.state} | History: ${history.length} points | 
-                            Last: ${entity.last_changed}
+                
+                // Test current state first
+                const entityExists = await this.testCurrentEntityState(hass, entityId);
+                if (!entityExists) {
+                    rows += `
+                        <div style="margin-bottom:8px;">
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <div style="font-size:16px;">❌</div>
+                                <div style="font-size:13px;color:#f00;">${entityId} - NOT FOUND</div>
+                            </div>
                         </div>`;
-                    }
+                    continue;
+                }
+
+                const entity = hass.states[entityId];
+                const label = customName || (entity.attributes.friendly_name || entity.entity_id);
+                
+                // Fetch history
+                console.log(`Fetching ${historyLength}h of history...`);
+                const history = await this.fetchEntityHistory(entityId, historyLength);
+                const bars = this.generateHistoryBars(history);
+                
+                // Current status
+                const currentState = this._determineUpState(entity.state);
+                const status = currentState ? '🟢' : '🔴';
+                
+                let debugText = '';
+                if (showDebug) {
+                    debugText = `<div style="font-size:10px;color:#666;margin-left:24px;margin-top:4px;">
+                        State: "${entity.state}" | History: ${history.length} points | 
+                        Last: ${entity.last_changed} | Current: ${currentState ? 'UP' : 'DOWN'}
+                    </div>`;
                 }
 
                 rows += `
-                    <div style="margin-bottom:8px;">
+                    <div style="margin-bottom:12px;">
                         <div style="display:flex;align-items:center;gap:8px;">
                             <div style="font-size:16px;">${status}</div>
                             <div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:120px;">${label}</div>
@@ -195,6 +223,19 @@ class MonitorHttpCard extends HTMLElement {
                         </div>
                         ${debugText}
                     </div>`;
+            }
+
+            let debugInfo = '';
+            if (showDebug) {
+                debugInfo = `
+                    <div style="background:#f5f5f5;padding:8px;margin-bottom:12px;font-size:11px;border-radius:4px;">
+                        <strong>Debug Info:</strong><br>
+                        Entities configured: ${cfg.entities.length}<br>
+                        History length: ${historyLength}h<br>
+                        Last render: ${new Date().toLocaleString()}<br>
+                        Check browser console for detailed logs
+                    </div>
+                `;
             }
 
             this.innerHTML = `
@@ -211,7 +252,7 @@ class MonitorHttpCard extends HTMLElement {
             return;
         }
 
-        // Single-entity mode
+        // Single entity mode
         const entityId = cfg.entity;
         if (!entityId) {
             this.innerHTML = `
@@ -223,8 +264,10 @@ class MonitorHttpCard extends HTMLElement {
             return;
         }
 
-        const entity = hass.states[entityId];
-        if (!entity) {
+        console.log(`Single entity mode: ${entityId}`);
+        
+        const entityExists = await this.testCurrentEntityState(hass, entityId);
+        if (!entityExists) {
             this.innerHTML = `
                 <ha-card header="${cardName}">
                     <div style="padding:16px;color:#f00;">
@@ -234,9 +277,10 @@ class MonitorHttpCard extends HTMLElement {
             return;
         }
 
+        const entity = hass.states[entityId];
         const history = await this.fetchEntityHistory(entityId, historyLength);
         const bars = this.generateHistoryBars(history);
-        const currentState = entity.state === 'on' || entity.state === 'online' || entity.state === 'true';
+        const currentState = this._determineUpState(entity.state);
         const status = currentState ? '🟢 Online' : '🔴 Offline';
 
         this.innerHTML = `
@@ -247,7 +291,7 @@ class MonitorHttpCard extends HTMLElement {
                     </div>
                     <div style="display:flex;align-items:end;height:32px;margin-bottom:8px;">${bars}</div>
                     <div style="font-size:12px;color:#888;text-align:center;">
-                        Service history (${historyLength}h) • Hover bars for timestamps
+                        Service history (${historyLength}h) • ${history.length} data points
                     </div>
                 </div>
             </ha-card>
@@ -255,7 +299,11 @@ class MonitorHttpCard extends HTMLElement {
     }
 
     set hass(hass) {
-        if (!hass) return;
+        if (!hass) {
+            console.log('Hass not available yet');
+            return;
+        }
+        console.log('Hass received, rendering card...');
         this.renderCard(hass);
     }
 
@@ -266,25 +314,25 @@ class MonitorHttpCard extends HTMLElement {
         return 2;
     }
 
-    static getConfigElement() {
-        return document.createElement('monitor-http-card-editor');
-    }
-
     static getStubConfig() {
         return {
             name: 'Monitor HTTP',
             entities: [
                 { entity: 'binary_sensor.example_service', name: 'Example Service' }
             ],
-            history_length: 24
+            history_length: 24,
+            show_debug: true
         };
     }
 }
 
 // Register the card
+console.log('Registering MonitorHttpCard...');
 if (!customElements.get('monitor-http-card')) {
     customElements.define('monitor-http-card', MonitorHttpCard);
-    console.info('Monitor HTTP Card registered');
+    console.log('MonitorHttpCard registered successfully');
+} else {
+    console.log('MonitorHttpCard already registered');
 }
 
 // Add the card to the custom card picker
@@ -294,3 +342,5 @@ window.customCards.push({
     name: 'Monitor HTTP Card',
     description: 'A card to monitor HTTP service uptime with history visualization'
 });
+
+console.log('MonitorHttpCard script loaded completely');
