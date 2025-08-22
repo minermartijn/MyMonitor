@@ -30,9 +30,9 @@ class MonitorHttpCard extends HTMLElement {
                     ).join('');
                 }
                 rows += `
-                    <div style="display:flex;align-items:center;margin-bottom:6px;">
-                        <div style="width:120px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${label}</div>
-                        <div style="display:flex;align-items:end;height:20px;flex:1;">${bars}</div>
+                    <div style="display:flex;align-items:center;margin-bottom:6px;gap:8px;">
+                        <div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${label}</div>
+                        <div style="display:flex;align-items:end;height:20px;flex:1;min-width:0;">${bars}</div>
                     </div>`;
             }
             this.innerHTML = `
