@@ -16,7 +16,7 @@ A Home Assistant custom integration (HACS compatible) to monitor HTTP endpoints 
 
 ## Manual Installation
 1. In Home Assistant, go to Settings → Dashboards → Resources, and add:
-	 - URL: `https://raw.githubusercontent.com/minermartijn/MyMonitor/refs/heads/master/custom_components/mymonitor/www/monitor-http-card.js`
+	 - URL: `https://cdn.jsdelivr.net/gh/minermartijn/MyMonitor@master/custom_components/mymonitor/www/monitor-http-card.js`
 	 - Type: JavaScript Module
 2. Add the card to your dashboard using:
 	 ```yaml
