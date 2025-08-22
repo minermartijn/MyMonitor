@@ -1,7 +1,7 @@
 {
 	"domain": "mymonitor",
 	"name": "MyMonitor",
-	"version": "0.3.0",
+	"version": "1.0.0",
 	"documentation": "https://github.com/minermartijn/MyMonitor",
 	"requirements": [],
 	"dependencies": [],
