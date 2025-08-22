@@ -18,14 +18,20 @@ A Home Assistant custom integration (HACS compatible) to monitor HTTP endpoints 
 1. Download `monitor-http-card.js` from [this repo](https://github.com/yourusername/monitor_http).
 2. Place it in your Home Assistant `/config/www/` directory.
 3. In Home Assistant, go to Settings → Dashboards → Resources, and add:
-1. Download `monitor-http-card.js` from [this repo](https://github.com/minermartijn/MyMonitor).
-	- Type: JavaScript Module
+	 - URL: `https://raw.githubusercontent.com/minermartijn/MyMonitor/refs/heads/master/custom_components/mymonitor/www/monitor-http-card.js`
+	 - Type: JavaScript Module
 4. Add the card to your dashboard using:
-	```yaml
-	type: 'custom:monitor-http-card'
-	entity: sensor.YOUR_SENSOR_NAME
-	```
-	Replace `YOUR_SENSOR_NAME` with the actual sensor name you configured.
+	 ```yaml
+	 type: custom:monitor-http-card
+	 name: My Monitors
+	 entities:
+		 - entity: sensor.phpmyadmin
+			 name: PHP My Admin
+		 - entity: sensor.radarr_monitor
+			 name: Radarr
+	 # Optional: history_length: 72 (for 3 days, default is 24)
+	 ```
+	 Replace the entities and names with your own.
 
 ## Usage
 ### 1. Add the Integration
