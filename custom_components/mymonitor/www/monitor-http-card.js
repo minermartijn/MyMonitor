@@ -17,33 +17,63 @@ class MonitorHttpCard extends HTMLElement {
 
     async fetchEntityHistory(entityId, hours) {
         try {
-            // Check cache expiry (refresh every 5 minutes)
+            // Check cache expiry (refresh every 2 minutes for better debugging)
             const now = Date.now();
-            if (this._lastUpdate[entityId] && (now - this._lastUpdate[entityId]) < 5 * 60 * 1000) {
+            if (this._lastUpdate[entityId] && (now - this._lastUpdate[entityId]) < 2 * 60 * 1000) {
+                console.log(`Using cached data for ${entityId}`);
                 return this._historyCache[entityId] || [];
             }
+
+            console.log(`Fetching history for ${entityId} over ${hours} hours`);
 
             // Fetch history from Home Assistant API
             const start = new Date(now - hours * 60 * 60 * 1000);
             const startIso = start.toISOString();
-            const url = `/api/history/period/${startIso}?filter_entity_id=${entityId}&minimal_response&no_attributes`;
             
-            const resp = await fetch(url, { credentials: 'same-origin' });
+            // More robust URL construction
+            const baseUrl = window.location.origin;
+            const url = `${baseUrl}/api/history/period/${startIso}?filter_entity_id=${entityId}&minimal_response&no_attributes`;
+            
+            console.log(`Fetching from URL: ${url}`);
+            
+            const resp = await fetch(url, { 
+                credentials: 'same-origin',
+                headers: {
+                    'Authorization': `Bearer ${this._getAuthToken()}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
             if (!resp.ok) {
-                console.error(`Failed to fetch history for ${entityId}: ${resp.status}`);
+                console.error(`Failed to fetch history for ${entityId}: ${resp.status} ${resp.statusText}`);
+                const errorText = await resp.text();
+                console.error('Response body:', errorText);
                 return [];
             }
 
             const data = await resp.json();
-            if (!Array.isArray(data) || !data[0]) {
+            console.log(`Raw history data for ${entityId}:`, data);
+
+            if (!Array.isArray(data) || data.length === 0) {
+                console.warn(`No history data returned for ${entityId}`);
+                return [];
+            }
+
+            const entityData = data[0];
+            if (!entityData || entityData.length === 0) {
+                console.warn(`Empty history array for ${entityId}`);
                 return [];
             }
 
             // Map to [timestamp, up] where up = true for 'on' or 'online', false for 'off' or 'offline'
-            const history = data[0].map(entry => [
-                entry.last_changed, 
-                entry.state === 'on' || entry.state === 'online' || entry.state === 'true'
-            ]);
+            const history = entityData.map(entry => {
+                const isUp = entry.state === 'on' || entry.state === 'online' || 
+                           entry.state === 'true' || entry.state === '1' || 
+                           entry.state === 'available' || entry.state === 'connected';
+                return [entry.last_changed, isUp];
+            });
+
+            console.log(`Processed ${history.length} history entries for ${entityId}`);
 
             // Cache the result
             this._historyCache[entityId] = history;
@@ -54,6 +84,31 @@ class MonitorHttpCard extends HTMLElement {
             console.error(`Error fetching history for ${entityId}:`, error);
             return [];
         }
+    }
+
+    async checkRecorderStatus(hass) {
+        try {
+            const resp = await fetch('/api/config', { credentials: 'same-origin' });
+            if (resp.ok) {
+                const config = await resp.json();
+                return {
+                    enabled: config.components.includes('recorder'),
+                    dbSize: 'Available'
+                };
+            }
+        } catch (e) {
+            console.warn('Could not check recorder status:', e);
+        }
+        return { enabled: false, dbSize: 'Unknown' };
+    }
+
+    _getAuthToken() {
+        // Try to get auth token from Home Assistant frontend
+        if (window.hassConnection && window.hassConnection.auth && window.hassConnection.auth.accessToken) {
+            return window.hassConnection.auth.accessToken;
+        }
+        // Fallback - this might not be needed if using credentials: 'same-origin'
+        return '';
     }
 
     generateHistoryBars(history, maxBars = 100) {
@@ -81,6 +136,21 @@ class MonitorHttpCard extends HTMLElement {
         const cfg = this.config;
         const historyLength = cfg.history_length || 24;
         const cardName = cfg.name || 'Monitor HTTP';
+        const showDebug = cfg.show_debug || false;
+
+        // Add debug information if requested
+        let debugInfo = '';
+        if (showDebug) {
+            const recorderInfo = await this.checkRecorderStatus(hass);
+            debugInfo = `
+                <div style="background:#f5f5f5;padding:8px;margin-bottom:12px;font-size:11px;border-radius:4px;">
+                    <strong>Debug Info:</strong><br>
+                    Recorder: ${recorderInfo.enabled ? 'Enabled' : 'Disabled'}<br>
+                    DB Size: ${recorderInfo.dbSize || 'Unknown'}<br>
+                    Last Update: ${new Date().toLocaleString()}
+                </div>
+            `;
+        }
 
         // Multi-entity mode
         if (Array.isArray(cfg.entities) && cfg.entities.length > 0) {
@@ -92,6 +162,7 @@ class MonitorHttpCard extends HTMLElement {
                 const entity = hass.states[entityId];
                 let bars = '';
                 let status = '';
+                let debugText = '';
                 let label = customName || (entity ? (entity.attributes.friendly_name || entity.entity_id) : entityId);
 
                 if (!entity) {
@@ -102,21 +173,34 @@ class MonitorHttpCard extends HTMLElement {
                     bars = this.generateHistoryBars(history);
                     
                     // Current status indicator
-                    const currentState = entity.state === 'on' || entity.state === 'online' || entity.state === 'true';
+                    const currentState = entity.state === 'on' || entity.state === 'online' || 
+                                       entity.state === 'true' || entity.state === '1' ||
+                                       entity.state === 'available' || entity.state === 'connected';
                     status = currentState ? '🟢' : '🔴';
+
+                    if (showDebug) {
+                        debugText = `<div style="font-size:10px;color:#666;margin-left:24px;">
+                            State: ${entity.state} | History: ${history.length} points | 
+                            Last: ${entity.last_changed}
+                        </div>`;
+                    }
                 }
 
                 rows += `
-                    <div style="display:flex;align-items:center;margin-bottom:8px;gap:8px;">
-                        <div style="font-size:16px;">${status}</div>
-                        <div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:120px;">${label}</div>
-                        <div style="display:flex;align-items:end;height:20px;flex:1;min-width:0;">${bars}</div>
+                    <div style="margin-bottom:8px;">
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <div style="font-size:16px;">${status}</div>
+                            <div style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:120px;">${label}</div>
+                            <div style="display:flex;align-items:end;height:20px;flex:1;min-width:0;">${bars}</div>
+                        </div>
+                        ${debugText}
                     </div>`;
             }
 
             this.innerHTML = `
                 <ha-card header="${cardName}">
                     <div style="padding:12px 16px 16px 16px;">
+                        ${debugInfo}
                         ${rows}
                         <div style="margin-top:8px;font-size:11px;color:#888;text-align:center;">
                             Service history (${historyLength}h per row) • 🟢 Online • 🔴 Offline
