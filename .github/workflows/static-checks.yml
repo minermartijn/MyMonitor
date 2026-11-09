@@ -1,0 +1,43 @@
+name: Static checks
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check dashboard card JavaScript syntax
+        run: node --check custom_components/mymonitor/www/monitor-http-card.js
+      - name: Check Python syntax and manifests
+        run: |
+          python -m compileall -q custom_components/mymonitor
+          python -m json.tool custom_components/mymonitor/manifest.json >/dev/null
+          python -m json.tool hacs.json >/dev/null
+      - name: Fail on unresolved source merge conflicts
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          root = Path("custom_components")
+          markers = ("<<<<<<< ", "=======", ">>>>>>> ")
+          bad = []
+          for path in root.rglob("*"):
+              if not path.is_file() or path.suffix not in {".py", ".js", ".json", ".yaml", ".yml"}:
+                  continue
+              for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                  if line.startswith(markers):
+                      bad.append(f"{path}:{number}")
+          if bad:
+              raise SystemExit("Unresolved merge markers: " + ", ".join(bad))
+          print("No conflict markers found")
+          PY
