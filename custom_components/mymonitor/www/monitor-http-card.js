@@ -16,64 +16,13 @@ class MonitorHttpCard extends HTMLElement {
         console.log('MonitorHttpCard: Config set', config);
     }
 
-<<<<<<< HEAD
-    async fetchEntityHistory(entityId, hours) {
-        console.log(`=== FETCHING HISTORY FOR ${entityId} ===`);
-        
-=======
     async fetchEntityHistory(entityId, hours, hass) {
         // Use Home Assistant's callApi for authentication
         console.log(`=== FETCHING HISTORY FOR ${entityId} ===`);
->>>>>>> b3ee8a0 (Release version 1.0.0: improved timeline bars, responsive card, and updated README with screenshots)
         try {
             const now = Date.now();
             const start = new Date(now - hours * 60 * 60 * 1000);
             const startIso = start.toISOString();
-<<<<<<< HEAD
-            
-            console.log(`Time range: ${start.toLocaleString()} to ${new Date(now).toLocaleString()}`);
-            
-            // Try multiple URL formats to see which works
-            const urls = [
-                `/api/history/period/${startIso}?filter_entity_id=${entityId}&minimal_response&no_attributes`,
-                `/api/history/period/${startIso}?filter_entity_id=${entityId}&minimal_response`,
-                `/api/history/period/${startIso}?filter_entity_id=${entityId}`,
-            ];
-            
-            for (let i = 0; i < urls.length; i++) {
-                const url = urls[i];
-                console.log(`Trying URL ${i + 1}: ${url}`);
-                
-                try {
-                    const resp = await fetch(url, { 
-                        credentials: 'same-origin',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        }
-                    });
-
-                    console.log(`Response ${i + 1}: ${resp.status} ${resp.statusText}`);
-                    
-                    if (resp.ok) {
-                        const data = await resp.json();
-                        console.log(`Data ${i + 1}:`, data);
-                        
-                        if (Array.isArray(data) && data.length > 0 && data[0] && data[0].length > 0) {
-                            const history = data[0].map(entry => {
-                                const isUp = this._determineUpState(entry.state);
-                                console.log(`Entry: ${entry.last_changed} -> ${entry.state} -> ${isUp ? 'UP' : 'DOWN'}`);
-                                return [entry.last_changed, isUp];
-                            });
-                            
-                            console.log(`Successfully processed ${history.length} history entries`);
-                            return history;
-                        } else {
-                            console.log(`URL ${i + 1} returned empty or invalid data`);
-                        }
-                    } else {
-                        const errorText = await resp.text();
-                        console.error(`URL ${i + 1} failed:`, errorText);
-=======
             console.log(`Time range: ${start.toLocaleString()} to ${new Date(now).toLocaleString()}`);
             // Try multiple URL formats to see which works
             const urls = [
@@ -98,21 +47,13 @@ class MonitorHttpCard extends HTMLElement {
                         return history;
                     } else {
                         console.log(`URL ${i + 1} returned empty or invalid data`);
->>>>>>> b3ee8a0 (Release version 1.0.0: improved timeline bars, responsive card, and updated README with screenshots)
                     }
                 } catch (e) {
                     console.error(`URL ${i + 1} error:`, e);
                 }
             }
-<<<<<<< HEAD
-            
             console.log('All history fetch attempts failed');
             return [];
-            
-=======
-            console.log('All history fetch attempts failed');
-            return [];
->>>>>>> b3ee8a0 (Release version 1.0.0: improved timeline bars, responsive card, and updated README with screenshots)
         } catch (error) {
             console.error(`Major error fetching history for ${entityId}:`, error);
             return [];
@@ -135,30 +76,6 @@ class MonitorHttpCard extends HTMLElement {
         return Boolean(state);
     }
 
-<<<<<<< HEAD
-    generateHistoryBars(history, maxBars = 100) {
-        console.log(`Generating bars for ${history.length} history entries`);
-        
-        if (!history || history.length === 0) {
-            return '<span style="color:#888;font-size:12px;">No history data found</span>';
-        }
-
-        // Sample data if too many points
-        let sampledHistory = history;
-        if (history.length > maxBars) {
-            const step = Math.ceil(history.length / maxBars);
-            sampledHistory = history.filter((_, index) => index % step === 0);
-            console.log(`Sampled history from ${history.length} to ${sampledHistory.length} points`);
-        }
-
-        const bars = sampledHistory.map(([timestamp, up]) => {
-            const color = up ? '#4caf50' : '#e53935';
-            const title = `${new Date(timestamp).toLocaleString()}: ${up ? 'Online' : 'Offline'}`;
-            return `<div style="display:inline-block;width:4px;height:18px;margin-right:1px;background:${color};border-radius:2px;" title="${title}"></div>`;
-        }).join('');
-        
-        return bars;
-=======
     generateHistoryBars(history, maxBars = 48, hours = 24) {
         // Responsive: try to fit as many bars as possible in the available width, but default to 48 (30-min intervals)
         // If the card is very small, reduce bar count
@@ -199,15 +116,10 @@ class MonitorHttpCard extends HTMLElement {
             bars.push(`<div style="display:inline-block;width:4px;height:18px;margin-right:1px;background:${color};border-radius:2px;" title="${title}"></div>`);
         }
         return bars.join('');
->>>>>>> b3ee8a0 (Release version 1.0.0: improved timeline bars, responsive card, and updated README with screenshots)
     }
 
     async testCurrentEntityState(hass, entityId) {
         console.log(`=== TESTING CURRENT STATE FOR ${entityId} ===`);
-<<<<<<< HEAD
-        
-=======
->>>>>>> b3ee8a0 (Release version 1.0.0: improved timeline bars, responsive card, and updated README with screenshots)
         // Test 1: Check if entity exists in hass.states
         const entity = hass.states[entityId];
         if (!entity) {
@@ -216,27 +128,6 @@ class MonitorHttpCard extends HTMLElement {
                 Object.keys(hass.states).filter(e => e.startsWith(entityId.split('.')[0])));
             return false;
         }
-<<<<<<< HEAD
-        
-        console.log(`Current entity state:`, entity);
-        console.log(`State: ${entity.state}, Last changed: ${entity.last_changed}`);
-        
-        // Test 2: Check if we can fetch current state via API
-        try {
-            const resp = await fetch(`/api/states/${entityId}`, { 
-                credentials: 'same-origin' 
-            });
-            if (resp.ok) {
-                const apiEntity = await resp.json();
-                console.log(`API entity state:`, apiEntity);
-            } else {
-                console.error(`API states fetch failed: ${resp.status}`);
-            }
-        } catch (e) {
-            console.error('API states test failed:', e);
-        }
-        
-=======
         console.log(`Current entity state:`, entity);
         console.log(`State: ${entity.state}, Last changed: ${entity.last_changed}`);
         // Test 2: Check if we can fetch current state via API using hass.callApi
@@ -246,7 +137,6 @@ class MonitorHttpCard extends HTMLElement {
         } catch (e) {
             console.error('API states test failed:', e);
         }
->>>>>>> b3ee8a0 (Release version 1.0.0: improved timeline bars, responsive card, and updated README with screenshots)
         return true;
     }
 
@@ -295,13 +185,8 @@ class MonitorHttpCard extends HTMLElement {
                 
                 // Fetch history
                 console.log(`Fetching ${historyLength}h of history...`);
-<<<<<<< HEAD
-                const history = await this.fetchEntityHistory(entityId, historyLength);
-                const bars = this.generateHistoryBars(history);
-=======
                 const history = await this.fetchEntityHistory(entityId, historyLength, hass);
                 const bars = this.generateHistoryBars(history, 48, historyLength);
->>>>>>> b3ee8a0 (Release version 1.0.0: improved timeline bars, responsive card, and updated README with screenshots)
                 
                 // Current status
                 const currentState = this._determineUpState(entity.state);
@@ -345,11 +230,7 @@ class MonitorHttpCard extends HTMLElement {
                         ${debugInfo}
                         ${rows}
                         <div style="margin-top:8px;font-size:11px;color:#888;text-align:center;">
-<<<<<<< HEAD
-                            Service history (${historyLength}h per row) • 🟢 Online • 🔴 Offline
-=======
                             Service history (${historyLength}h per row)
->>>>>>> b3ee8a0 (Release version 1.0.0: improved timeline bars, responsive card, and updated README with screenshots)
                         </div>
                     </div>
                 </ha-card>
@@ -383,13 +264,8 @@ class MonitorHttpCard extends HTMLElement {
         }
 
         const entity = hass.states[entityId];
-<<<<<<< HEAD
-        const history = await this.fetchEntityHistory(entityId, historyLength);
-        const bars = this.generateHistoryBars(history);
-=======
     const history = await this.fetchEntityHistory(entityId, historyLength, hass);
     const bars = this.generateHistoryBars(history, 48, historyLength);
->>>>>>> b3ee8a0 (Release version 1.0.0: improved timeline bars, responsive card, and updated README with screenshots)
         const currentState = this._determineUpState(entity.state);
         const status = currentState ? '🟢 Online' : '🔴 Offline';
 
@@ -401,11 +277,7 @@ class MonitorHttpCard extends HTMLElement {
                     </div>
                     <div style="display:flex;align-items:end;height:32px;margin-bottom:8px;">${bars}</div>
                     <div style="font-size:12px;color:#888;text-align:center;">
-<<<<<<< HEAD
-                        Service history (${historyLength}h) • ${history.length} data points
-=======
                         Service history (${historyLength}h)
->>>>>>> b3ee8a0 (Release version 1.0.0: improved timeline bars, responsive card, and updated README with screenshots)
                     </div>
                 </div>
             </ha-card>
@@ -457,8 +329,4 @@ window.customCards.push({
     description: 'A card to monitor HTTP service uptime with history visualization'
 });
 
-<<<<<<< HEAD
 console.log('MonitorHttpCard script loaded completely');
-=======
-console.log('MonitorHttpCard script loaded completely');
->>>>>>> b3ee8a0 (Release version 1.0.0: improved timeline bars, responsive card, and updated README with screenshots)
